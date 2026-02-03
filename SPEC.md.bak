@@ -1,0 +1,141 @@
+# SPEC — Cherrybox NotebookLM-like (MVP)
+
+## 1. Scope
+提供一个 MCP Server，负责：
+1) 笔记索引（ingest）
+2) 检索（FTS / 可选向量）
+3) evidence 打包（可追溯）
+4) 为“Scene 写作”和“一致性检查”生成 grounded prompt
+
+不负责：
+- 实际调用 LLM 生成正文（由宿主负责）
+- GUI（由宿主负责）
+
+---
+
+## 2. Non-goals
+- 多用户/权限系统
+- 分布式/云端向量库
+- 完整 NotebookLM UI
+
+---
+
+## 3. Concepts
+
+### 3.1 Note
+Markdown 文件，可能含 YAML frontmatter：
+- type: character/location/event/scene/pending/outline/chapter/...
+- id: 稳定标识（建议用户提供，否则自动生成 hash）
+
+### 3.2 Chunk
+对 Note 的正文按 heading/段落切块，保存：
+- note_id, path
+- heading_path
+- start_line, end_line
+- text
+
+### 3.3 Evidence
+对 chunk 的可引用封装：
+- evidence_id
+- note_id
+- heading_path
+- line range
+- excerpt（截断）
+- why_selected（必填：命中原因）
+- score
+
+### 3.4 Grounded Prompt
+MCP 工具不直接生成小说正文，而是返回：
+- prompt: (system+user 合并文本)
+- evidence: Evidence[]
+宿主 LLM 使用 prompt 生成正文，并输出 USED_EVIDENCE。
+
+---
+
+## 4. Architecture
+
+### 4.1 Modules
+- ingest/: 扫描、解析、切块、写入 DB
+- search/: FTS + 可选向量 + 融合排序
+- evidence/: evidence 生成与格式化
+- novel/: scene/context/prompt 组装
+- server/: MCP server + tool 注册
+
+### 4.2 Storage (SQLite)
+Tables:
+- notes(id, path, title, type, canon_level, frontmatter_json, content_hash, updated_at)
+- chunks(id, note_id, heading_path, start_line, end_line, text, text_hash)
+- chunks_fts (FTS5 virtual table)
+- (optional) chunk_vec (vec0 virtual table) + chunk_embeddings(meta in chunks)
+
+---
+
+## 5. Ingest pipeline
+1) 扫描 NOTES_ROOT（glob）
+2) 对每个 md：
+   - gray-matter 解析 frontmatter
+   - 标题/分段切块（保留 heading_path + 行号）
+   - upsert notes
+   - replace chunks（按 text_hash 判断增量）
+   - upsert chunks_fts
+   - (optional) 生成 embedding 写入 vec0
+
+---
+
+## 6. Search
+### 6.1 FTS
+- 输入 query -> sanitize -> FTS MATCH
+- score = bm25(chunks_fts)
+
+### 6.2 Vector (optional)
+- embed(query) -> Float32Array
+- SELECT ... FROM chunk_vec WHERE ... ORDER BY distance LIMIT k
+
+### 6.3 Hybrid merge
+- normalize scores
+- weighted sum
+- dedupe by chunk_id
+- apply filters(type/canon_level/note_id whitelist)
+
+---
+
+## 7. Scene context builder (MVP)
+Input: scene_id
+Steps:
+1) load scene note YAML
+2) mandatory evidence:
+   - scene YAML itself
+   - characters[] note(s)
+   - location note
+   - dependencies.must_use_facts related chunks
+3) retrieval evidence:
+   - query = names + location + conflict keywords
+   - run search -> evidence
+4) package result:
+   - Evidence[] (limit 8~16)
+   - Build draft prompt text
+
+---
+
+## 8. Tooling (MCP)
+Expose tools with strict JSON schemas, support outputSchema (structured content).
+
+Tool list:
+- sources.ingest
+- sources.search
+- scene.create
+- scene.build_draft_prompt
+- scene.build_check_prompt
+
+---
+
+## 9. Error handling
+- Always return MCP tool result as:
+  - content: [{type:"text", text:"..."}]
+  - structuredContent: { ok:false, error:{code,message,details?} } when failed
+
+---
+
+## 10. Security
+- NOTES_ROOT 限定：拒绝访问根目录以外路径
+- 工具仅做“读/写本地笔记与索引”，不做外网请求（除非启用 embedding provider）

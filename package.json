@@ -1,0 +1,42 @@
+{
+  "name": "chememcp",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "ChatMemory MCP Server - Persistent context management for CherryStudio",
+  "main": "./build/index.js",
+  "bin": {
+    "chememcp": "./build/index.js"
+  },
+  "scripts": {
+    "build": "tsc && cp src/database/schema.sql build/database/ && (test -f build/index.js && chmod +x build/index.js || true)",
+    "watch": "tsc --watch",
+    "start": "node build/index.js",
+    "dev": "npm run build && npm start",
+    "clean": "rm -rf build",
+    "type-check": "tsc --noEmit",
+    "test:db": "npm run build && node build/test-db.js"
+  },
+  "keywords": [
+    "mcp",
+    "memory",
+    "context",
+    "chatgpt",
+    "claude"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "better-sqlite3": "^11.10.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0"
+  }
+}

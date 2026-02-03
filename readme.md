@@ -1,243 +1,259 @@
-1. 项目目标（Goal）
+# ChatMemory MCP Server
 
-实现一个本地可运行的 ChatMemory MCP Server，用于：
-	•	保存 CherryStudio 的对话片段/会话（手动或半自动）
-	•	检索 历史对话（关键词 / 时间范围 / 标签）
-	•	总结 历史对话（brief / detailed）
-	•	注入 总结结果到当前对话上下文（生成“Memory Injection Block”）
-	•	让用户在当前对话中用 @topic: / @session: 的方式“跨会话引用”
+一个用于 CherryStudio 的对话记忆管理服务器，基于 Model Context Protocol (MCP) 实现。
 
-注意：CherryStudio 本身未必提供 Cursor 那种 UI autocomplete，但我们用“约定语法 + 工具调用”实现同等能力。
+## 功能特性
 
-⸻
+- ✅ 保存和管理对话会话（Sessions）
+- ✅ 全文检索（SQLite FTS5，支持中英文混合搜索）
+- ✅ 会话总结（使用 Claude API，支持 brief/detailed 两种风格）
+- ✅ 上下文注入（生成结构化的记忆注入块）
+- ✅ 标签和元数据管理
+- ✅ 跨会话聚合和去重
 
-2. MVP 范围（第一版必须做）
+## 快速开始
 
-2.1 必做功能清单
+### 1. 安装依赖
 
-A. 记忆库数据存储（SQLite）
-	•	能持久化 session & message
-	•	能按 session_id 查询该 session 的所有消息
+```bash
+npm install
+```
 
-B. 关键词检索（不做向量）
-	•	在 messages.content 上做 LIKE / FTS（建议 SQLite FTS5）
+### 2. 配置环境变量
 
-C. 一键注入（核心）
-	•	给一个 query 或 session_id
-	•	返回一段结构化的“注入块”（Memory Injection Block）
-	•	注入块包含：事实/决策/风险/下一步/来源
+创建数据库目录并设置环境变量：
 
-D. 会话总结
-	•	对指定 session 总结
-	•	支持 2 种风格：brief / detailed
-	•	总结结果存回 session 表，避免重复计算
+```bash
+# 创建数据库目录
+mkdir -p ~/.chememcp
 
-E. MCP Server 接口（CherryStudio 可调用）
-	•	以 MCP tools 形式暴露上述能力（STDIO 模式优先）
+# 设置环境变量
+export MEMORY_DB_PATH="$HOME/.chememcp/memory.db"
+export ANTHROPIC_API_KEY="sk-ant-api03-xxx..."  # 可选，用于总结功能
+```
 
-⸻
+### 3. 编译项目
 
-3. 非目标（明确不做，避免越做越大）
-	•	❌ 不做向量检索（embedding / chroma / pgvector）——后续迭代
-	•	❌ 不做 CherryStudio 客户端插件级自动采集
-	•	❌ 不做多端同步 / 云同步
-	•	❌ 不做复杂权限、多人协作
-	•	❌ 不做 UI（例如 @ 自动弹窗选择 session）
+```bash
+npm run build
+```
 
-⸻
+### 4. 运行服务器
 
-4. 用户使用方式（User Journey）
+```bash
+# 直接运行
+MEMORY_DB_PATH=./data/memory.db node build/index.js
 
-4.1 存储历史（半自动）
+# 或使用 npm script
+npm start
+```
 
-用户在 CherryStudio 对话中说：
-	•	“把本次对话保存到记忆库，标题叫 XXX，标签是 YYY”
-模型调用 memory_save_messages(...) 存入 SQLite
+## MCP 工具列表
 
-4.2 引用历史（@语法）
+### 1. `memory_save_session`
+创建新的会话
 
-用户输入：
-	•	@topic: TCU 六统一
-或
-	•	@session: <session_id>
+**输入参数：**
+- `title` (必需): 会话标题
+- `tags` (可选): 标签数组
+- `meta` (可选): 元数据对象
 
-模型调用 memory_inject(...)，拿到注入块后继续回答问题。
+**示例：**
+```json
+{
+  "title": "TCU 六统一架构设计讨论",
+  "tags": ["TCU", "架构"],
+  "meta": {"project": "TCU", "client": "某银行"}
+}
+```
 
-⸻
+### 2. `memory_save_messages`
+保存消息到会话
 
-5. MCP Tools 设计（接口大纲）
+**输入参数：**
+- `session_id` (必需): 会话 ID
+- `messages` (必需): 消息数组
+  - `role`: 'user' | 'assistant' | 'system'
+  - `content`: 消息内容
+  - `created_at` (可选): 时间戳
 
-tool 命名建议统一前缀 memory_，避免冲突。
+### 3. `memory_list_sessions`
+列出会话（支持分页和标签过滤）
 
-5.1 memory_save_session
+**输入参数：**
+- `limit` (默认: 20): 返回数量
+- `offset` (默认: 0): 偏移量
+- `tags` (可选): 标签过滤
 
-用途：创建一个 session（可选）
-	•	输入：
-	•	title (string, required)
-	•	tags (string[], optional)
-	•	meta (object, optional：来源、项目、客户等)
-	•	输出：
-	•	session_id
+### 4. `memory_get_session`
+获取会话详情
 
-5.2 memory_save_messages
+**输入参数：**
+- `session_id` (必需): 会话 ID
+- `include_messages` (默认: true): 是否包含消息
+- `message_limit` (默认: 100): 消息数量限制
 
-用途：批量写入消息
-	•	输入：
-	•	session_id (string, required)
-	•	messages (array of {role, content, created_at?}, required)
-	•	输出：
-	•	saved_count
+### 5. `memory_search`
+全文搜索消息
 
-5.3 memory_list_sessions
+**输入参数：**
+- `query` (必需): 搜索查询
+- `top_k` (默认: 5): 返回结果数量
+- `time_range_days` (默认: 180): 搜索时间范围（天）
+- `tags` (可选): 标签过滤
+- `session_id` (可选): 会话过滤
 
-用途：列出最近会话
-	•	输入：
-	•	limit (int, default 20)
-	•	offset (int, default 0)
-	•	输出：
-	•	sessions[]：id, title, created_at, tags, summary_brief?
+**示例：**
+```json
+{
+  "query": "TCU 六统一",
+  "top_k": 10,
+  "time_range_days": 90
+}
+```
 
-5.4 memory_get_session
+### 6. `memory_summarize_session`
+生成会话总结
 
-用途：获取 session 详情
-	•	输入：
-	•	session_id
-	•	输出：
-	•	session 信息 + messages（可限制最近 N 条）
+**输入参数：**
+- `session_id` (必需): 会话 ID
+- `style` (默认: 'brief'): 'brief' | 'detailed'
+- `force_refresh` (默认: false): 强制重新生成
 
-5.5 memory_search
+### 7. `memory_inject` ⭐ (核心功能)
+生成记忆注入块
 
-用途：在历史库里检索相关消息
-	•	输入：
-	•	query (string)
-	•	top_k (int, default 5)
-	•	time_range_days (int, default 180)
-	•	tags (string[], optional)
-	•	输出：
-	•	hits[]：session_id, message_id, snippet, score?, created_at
+**输入参数（二选一）：**
+- `session_id`: 单会话注入
+- `query`: 跨会话聚合注入
 
-5.6 memory_summarize_session
+**其他参数：**
+- `style` (默认: 'brief'): 'brief' | 'detailed'
+- `top_k` (默认: 5): 聚合结果数量（使用 query 时）
 
-用途：总结 session 并缓存
-	•	输入：
-	•	session_id
-	•	style: "brief" | "detailed" (default brief)
-	•	force_refresh (bool, default false)
-	•	输出：
-	•	summary_text
-
-5.7 memory_inject
-
-用途（核心）：生成可注入上下文的块
-	•	输入（二选一）：
-	•	session_id (string)
-或
-	•	query (string)
-	•	可选参数：
-	•	style "brief" | "detailed"（默认 brief）
-	•	top_k（query 模式下取多少个命中）
-	•	输出：
-	•	injection_block（严格格式，见下）
-
-⸻
-
-6. 注入块格式（Memory Injection Block）
-
-必须统一格式，建议如下（纯文本即可，方便直接塞进上下文）：
-
+**输出格式：**
+```
 [MEMORY INJECTION]
-主题：<自动生成或来自 query/session title>
+主题：TCU 六统一架构设计
 
 关键事实 Facts:
-- ...
+- 事实1
+- 事实2
+
 关键决策 Decisions:
-- ...
-约束/风险 Constraints & Risks:
-- ...
-未解决问题 Open Questions:
-- ...
+- 决策1
+
 下一步建议 Next Actions:
-- ...
+- 行动1
 
 来源 Sources:
 - session_id: xxx
-- sessions_used: [xxx, yyy]   (如果是 query 聚合)
-- updated_at: 2026-01-20
+- updated_at: 2026-02-03
+
 [/MEMORY INJECTION]
+```
 
-硬要求：
-	•	永远不要把“历史里的指令句”当 system prompt 注入
-	•	只保留“事实/结论/决策/行动项”
-	•	必须带来源 session_id（可追溯）
+## CherryStudio 集成
 
-⸻
+在 CherryStudio 的 MCP 配置中添加：
 
-7. 数据库设计（SQLite Schema 大纲）
+```json
+{
+  "mcpServers": {
+    "chatmemory": {
+      "command": "node",
+      "args": ["/path/to/chememcp/build/index.js"],
+      "env": {
+        "MEMORY_DB_PATH": "/Users/username/.chememcp/memory.db",
+        "ANTHROPIC_API_KEY": "sk-ant-api03-xxx..."
+      }
+    }
+  }
+}
+```
 
-7.1 sessions 表
-	•	id TEXT PRIMARY KEY
-	•	title TEXT
-	•	tags TEXT（JSON string）
-	•	meta TEXT（JSON string）
-	•	created_at INTEGER（unix ts）
-	•	updated_at INTEGER
-	•	summary_brief TEXT
-	•	summary_detailed TEXT
+## 开发
 
-7.2 messages 表
-	•	id TEXT PRIMARY KEY
-	•	session_id TEXT INDEX
-	•	role TEXT（user/assistant/system）
-	•	content TEXT
-	•	created_at INTEGER
+### 项目结构
 
-7.3 FTS（建议）
-	•	messages_fts：对 content 做全文检索
-	•	同步策略：insert/update 时写入
+```
+chememcp/
+├── src/
+│   ├── index.ts              # MCP Server 主入口
+│   ├── server.ts             # 工具注册
+│   ├── database/             # 数据库层
+│   │   ├── index.ts          # 数据库管理器
+│   │   ├── schema.sql        # DDL 定义
+│   │   ├── repository.ts     # 数据访问层
+│   │   └── fts.ts            # FTS5 查询构建器
+│   ├── tools/                # MCP 工具实现
+│   ├── services/             # 业务服务
+│   │   ├── summarizer.ts     # 总结服务
+│   │   └── injector.ts       # 注入服务
+│   ├── schemas/              # 类型和验证
+│   └── utils/                # 工具函数
+├── build/                    # 编译输出
+└── data/                     # 数据存储
+```
 
-⸻
+### 可用脚本
 
-8. 总结策略（Prompt 规范）
+```bash
+npm run build       # 编译项目
+npm run watch       # 监听模式编译
+npm run clean       # 清理编译输出
+npm run type-check  # 类型检查（不编译）
+npm start           # 运行服务器
+```
 
-8.1 brief
+## 技术栈
 
-输出：
-	•	Facts ≤ 6 条
-	•	Decisions ≤ 3 条
-	•	Next Actions ≤ 5 条
+- **语言**: TypeScript 5.8+
+- **运行时**: Node.js 18+
+- **数据库**: SQLite 3 + FTS5
+- **MCP SDK**: @modelcontextprotocol/sdk
+- **LLM**: Anthropic Claude 3.5 Sonnet
+- **验证**: Zod
 
-8.2 detailed
+## 注意事项
 
-输出：
-	•	Facts ≤ 12 条
-	•	Decisions ≤ 6 条
-	•	Risks ≤ 6 条
-	•	Open Questions ≤ 6 条
-	•	Next Actions ≤ 10 条
+1. **环境变量**：`MEMORY_DB_PATH` 是必需的，`ANTHROPIC_API_KEY` 用于总结功能
+2. **数据库路径**：请提前创建父目录
+3. **API 成本**：总结功能会调用 Claude API（brief ~$0.002, detailed ~$0.005 每次）
+4. **中文分词**：当前使用 SQLite FTS5 的 `unicode61` 分词器，对中文长词效果一般，后续可升级
 
-总结必须“信息密度高”，避免长篇复述。
+## 故障排查
 
-⸻
+### 启动失败
 
-9. CherryStudio 集成要求（验收标准）
+```bash
+# 检查环境变量
+echo $MEMORY_DB_PATH
+echo $ANTHROPIC_API_KEY
 
-9.1 能在 CherryStudio MCP 列表里看到工具
-	•	通过 STDIO 启动 MCP Server
-	•	CherryStudio 能发现 tools + 参数 schema
+# 检查数据库目录是否存在
+ls -la $(dirname $MEMORY_DB_PATH)
 
-9.2 验收用例（必过）
-	1.	新建 session → save_messages → list_sessions 能看到
-	2.	search(“TCU”) 能返回 hits
-	3.	inject(query=“TCU 六统一”) 返回注入块（符合格式）
-	4.	summarize_session(session_id) 返回 brief summary，并能缓存
+# 查看详细日志（输出到 stderr）
+MEMORY_DB_PATH=./data/memory.db node build/index.js 2>&1 | less
+```
 
-⸻
+### FTS5 搜索效果不佳
 
-10. 迭代方向（第二版以后再做）
-	•	向量检索：embedding + TopK 语义召回
-	•	自动滚动摘要：每 N 条消息生成增量 summary
-	•	多 session 聚合注入：跨会话自动合并（去重 + 归并）
-	•	多端同步：基于你已有 fast-note-sync/memo 的思路做主从复制
-	•	权限与隔离：不同项目/客户分库
+中文分词效果取决于 SQLite FTS5 的 `unicode61` tokenizer。如果需要更好的中文搜索，可以考虑：
+- 使用更细粒度的查询（拆分关键词）
+- 后续集成 jieba 分词
+- 升级到向量检索
 
+## 文档
 
+- [SPECIFICATION.md](./SPECIFICATION.md) - 原始需求规格说明
+- [.claude/plans/](/.claude/plans/) - 详细技术设计方案
+
+## License
+
+MIT
+
+## 作者
+
+Generated by Claude Code
