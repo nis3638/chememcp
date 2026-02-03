@@ -1,8 +1,19 @@
 # ChatMemory MCP Server
 
-一个用于 CherryStudio 的对话记忆管理服务器，基于 Model Context Protocol (MCP) 实现。
+一个用于 CherryStudio 的对话记忆管理服务器，让你的 AI 助手能够记住和检索历史对话。
 
-## 功能特性
+## 💡 这是什么？
+
+ChatMemory 是一个本地运行的记忆管理服务器，可以帮助你：
+
+- 💾 **保存重要对话**：把有价值的讨论永久保存下来
+- 🔍 **快速检索历史**：通过关键词找到之前聊过的内容
+- 📝 **智能总结**：自动提取对话中的关键事实、决策和行动项
+- 🔗 **跨会话引用**：在新对话中快速调用历史记忆
+
+**适用场景**：长期项目跟踪、技术讨论记录、客户需求管理、个人知识库等。
+
+## ✨ 功能特性
 
 - ✅ 保存和管理对话会话（Sessions）
 - ✅ 全文检索（SQLite FTS5，支持中英文混合搜索）
@@ -11,42 +22,149 @@
 - ✅ 标签和元数据管理
 - ✅ 跨会话聚合和去重
 
-## 快速开始
+---
 
-### 1. 安装依赖
+## 🚀 快速开始（5 分钟上手）
+
+### 第一步：安装和编译
 
 ```bash
+# 安装依赖
 npm install
-```
 
-### 2. 配置环境变量
-
-创建数据库目录并设置环境变量：
-
-```bash
-# 创建数据库目录
-mkdir -p ~/.chememcp
-
-# 设置环境变量
-export MEMORY_DB_PATH="$HOME/.chememcp/memory.db"
-export ANTHROPIC_API_KEY="sk-ant-api03-xxx..."  # 可选，用于总结功能
-```
-
-### 3. 编译项目
-
-```bash
+# 编译项目
 npm run build
 ```
 
-### 4. 运行服务器
+### 第二步：配置 CherryStudio
+
+在 CherryStudio 的设置中，找到 **MCP 服务器配置**，添加以下内容：
+
+```json
+{
+  "mcpServers": {
+    "chatmemory": {
+      "command": "node",
+      "args": ["/绝对路径/chememcp/build/index.js"],
+      "env": {
+        "MEMORY_DB_PATH": "/Users/你的用户名/.chememcp/memory.db",
+        "ANTHROPIC_API_KEY": "sk-ant-..."
+      }
+    }
+  }
+}
+```
+
+**⚠️ 重要提示**：
+1. 将 `/绝对路径/chememcp` 替换为你的项目实际路径
+   - macOS/Linux: 可以在项目目录运行 `pwd` 获取
+   - Windows: 使用 `cd` 命令查看当前路径
+2. 将 `/Users/你的用户名` 替换为你的实际用户目录
+3. `ANTHROPIC_API_KEY` 是可选的，仅用于总结功能
+   - 如果暂时不需要总结功能，可以省略这一行
+
+### 第三步：创建数据库目录
 
 ```bash
-# 直接运行
-MEMORY_DB_PATH=./data/memory.db node build/index.js
+# macOS / Linux
+mkdir -p ~/.chememcp
 
-# 或使用 npm script
-npm start
+# Windows (PowerShell)
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.chememcp"
 ```
+
+### 第四步：重启 CherryStudio
+
+重启后，你应该能在对话中看到 **7 个新工具**：
+- ✅ `memory_save_session` - 创建会话
+- ✅ `memory_save_messages` - 保存消息
+- ✅ `memory_list_sessions` - 列出会话
+- ✅ `memory_get_session` - 获取会话详情
+- ✅ `memory_search` - 搜索历史
+- ✅ `memory_summarize_session` - 总结会话（需要 API Key）
+- ✅ `memory_inject` - 注入记忆（核心功能）
+
+---
+
+## 📖 使用场景示例
+
+### 场景 1: 保存当前对话
+
+在 CherryStudio 中对 AI 说：
+
+> 请把我们的对话保存到记忆库，标题叫"TCU 六统一架构设计讨论"，添加标签"TCU"和"架构"
+
+AI 会自动调用工具保存你们的对话。
+
+### 场景 2: 搜索历史对话
+
+> 搜索我之前问过的关于 TCU 六统一的问题
+
+AI 会搜索历史记录并返回相关片段。
+
+### 场景 3: 跨会话引用（核心功能）
+
+> @topic: TCU 六统一
+> 基于之前的讨论，请继续深入解释统一认证的实现细节
+
+AI 会自动调用 `memory_inject` 工具，找到相关历史并注入到当前对话。
+
+### 场景 4: 生成总结
+
+> 总结我们上次关于 TCU 的讨论，要详细版本
+
+AI 会生成包含关键事实、决策、风险和行动项的结构化总结。
+
+---
+
+---
+
+## ⚙️ 配置说明
+
+### 环境变量详解
+
+| 变量名 | 必需 | 说明 | 示例 |
+|--------|------|------|------|
+| `MEMORY_DB_PATH` | ✅ **必需** | 数据库文件路径 | `/Users/username/.chememcp/memory.db` |
+| `ANTHROPIC_API_KEY` | ⚠️ 可选 | Claude API 密钥（用于总结功能） | `sk-ant-api03-xxx...` |
+
+### 如何获取 API Key
+
+1. 访问 [Anthropic Console](https://console.anthropic.com/)
+2. 注册/登录后，在 **API Keys** 页面创建新密钥
+3. 复制密钥并填入配置
+
+**成本说明**：
+- Brief 总结：约 $0.002/次（~1K tokens）
+- Detailed 总结：约 $0.005/次（~2K tokens）
+- 如果暂时不需要总结功能，可以不配置 API Key，其他功能不受影响
+
+### 推荐的数据库路径
+
+```bash
+# macOS / Linux
+~/.chememcp/memory.db
+
+# Windows
+C:\Users\你的用户名\.chememcp\memory.db
+```
+
+### 测试安装是否成功
+
+编译后，可以快速测试：
+
+```bash
+# 测试数据库功能
+npm run test:db
+
+# 可视化测试（推荐）
+export MEMORY_DB_PATH="./data/test-memory.db"
+npm run test:inspector
+```
+
+详细测试方法请参考 [TESTING.md](./TESTING.md)。
+
+---
 
 ## MCP 工具列表
 
@@ -153,16 +271,16 @@ npm start
 [/MEMORY INJECTION]
 ```
 
-## CherryStudio 集成
+## 🔌 CherryStudio 集成配置
 
-在 CherryStudio 的 MCP 配置中添加：
+完整配置示例（在 CherryStudio 的 MCP 设置中）：
 
 ```json
 {
   "mcpServers": {
     "chatmemory": {
       "command": "node",
-      "args": ["/path/to/chememcp/build/index.js"],
+      "args": ["/绝对路径/chememcp/build/index.js"],
       "env": {
         "MEMORY_DB_PATH": "/Users/username/.chememcp/memory.db",
         "ANTHROPIC_API_KEY": "sk-ant-api03-xxx..."
@@ -172,7 +290,26 @@ npm start
 }
 ```
 
-## 开发
+**常见问题**：
+
+1. **工具没有显示出来**
+   - 检查 `args` 路径是否使用绝对路径
+   - 确保已经运行 `npm run build` 编译项目
+   - 查看 CherryStudio 的日志是否有错误
+
+2. **启动失败**
+   - 检查数据库目录是否存在（`~/.chememcp/`）
+   - 确认 `MEMORY_DB_PATH` 环境变量配置正确
+   - 查看 stderr 日志：`node build/index.js 2>&1 | less`
+
+3. **总结功能不工作**
+   - 确认已配置 `ANTHROPIC_API_KEY`
+   - 检查 API Key 是否有效
+   - 确认网络能访问 Anthropic API
+
+---
+
+## 🛠️ 开发者信息
 
 ### 项目结构
 
@@ -182,17 +319,12 @@ chememcp/
 │   ├── index.ts              # MCP Server 主入口
 │   ├── server.ts             # 工具注册
 │   ├── database/             # 数据库层
-│   │   ├── index.ts          # 数据库管理器
-│   │   ├── schema.sql        # DDL 定义
-│   │   ├── repository.ts     # 数据访问层
-│   │   └── fts.ts            # FTS5 查询构建器
 │   ├── tools/                # MCP 工具实现
-│   ├── services/             # 业务服务
-│   │   ├── summarizer.ts     # 总结服务
-│   │   └── injector.ts       # 注入服务
+│   ├── services/             # 业务服务（总结、注入）
 │   ├── schemas/              # 类型和验证
 │   └── utils/                # 工具函数
 ├── build/                    # 编译输出
+├── scripts/                  # 测试脚本
 └── data/                     # 数据存储
 ```
 
@@ -203,10 +335,16 @@ npm run build       # 编译项目
 npm run watch       # 监听模式编译
 npm run clean       # 清理编译输出
 npm run type-check  # 类型检查（不编译）
-npm start           # 运行服务器
+npm start           # 直接运行服务器
+
+# 测试脚本
+npm run test:db          # 测试数据库功能
+npm run test:quick       # 快速功能测试
+npm run test:manual      # 完整手动测试
+npm run test:inspector   # 启动 MCP Inspector
 ```
 
-## 技术栈
+### 技术栈
 
 - **语言**: TypeScript 5.8+
 - **运行时**: Node.js 18+
@@ -215,40 +353,86 @@ npm start           # 运行服务器
 - **LLM**: Anthropic Claude 3.5 Sonnet
 - **验证**: Zod
 
-## 注意事项
+---
 
-1. **环境变量**：`MEMORY_DB_PATH` 是必需的，`ANTHROPIC_API_KEY` 用于总结功能
-2. **数据库路径**：请提前创建父目录
-3. **API 成本**：总结功能会调用 Claude API（brief ~$0.002, detailed ~$0.005 每次）
-4. **中文分词**：当前使用 SQLite FTS5 的 `unicode61` 分词器，对中文长词效果一般，后续可升级
+## ❓ 常见问题
 
-## 故障排查
+### 1. 启动时报错：Missing MEMORY_DB_PATH
 
-### 启动失败
+**原因**：环境变量未配置
 
+**解决**：
 ```bash
-# 检查环境变量
-echo $MEMORY_DB_PATH
-echo $ANTHROPIC_API_KEY
+# macOS / Linux
+export MEMORY_DB_PATH="$HOME/.chememcp/memory.db"
+mkdir -p ~/.chememcp
 
-# 检查数据库目录是否存在
-ls -la $(dirname $MEMORY_DB_PATH)
-
-# 查看详细日志（输出到 stderr）
-MEMORY_DB_PATH=./data/memory.db node build/index.js 2>&1 | less
+# Windows (PowerShell)
+$env:MEMORY_DB_PATH="$env:USERPROFILE\.chememcp\memory.db"
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.chememcp"
 ```
 
-### FTS5 搜索效果不佳
+### 2. 搜索不到中文内容
 
-中文分词效果取决于 SQLite FTS5 的 `unicode61` tokenizer。如果需要更好的中文搜索，可以考虑：
-- 使用更细粒度的查询（拆分关键词）
-- 后续集成 jieba 分词
-- 升级到向量检索
+**原因**：FTS5 使用 `unicode61` 分词器，对长词效果一般
 
-## 文档
+**解决**：
+- 尝试拆分关键词搜索（如"TCU 六统一"改为"TCU"或"六统一"）
+- 后续版本会考虑集成 jieba 分词或向量检索
 
+### 3. 总结功能调用失败
+
+**原因**：API Key 未配置或无效
+
+**解决**：
+```bash
+# 检查环境变量
+echo $ANTHROPIC_API_KEY
+
+# 如果未设置，添加到配置
+export ANTHROPIC_API_KEY="sk-ant-api03-xxx..."
+```
+
+### 4. CherryStudio 看不到工具
+
+**可能原因**：
+- 项目路径配置错误（使用相对路径）
+- 未编译项目（缺少 `build/index.js`）
+- 环境变量未正确传递
+
+**排查步骤**：
+1. 手动测试服务器能否启动：
+   ```bash
+   MEMORY_DB_PATH=./data/test.db node build/index.js
+   ```
+2. 检查 CherryStudio 日志
+3. 确认使用绝对路径
+
+### 5. 数据库文件在哪里？
+
+**默认位置**：`~/.chememcp/memory.db`
+
+**查看数据**：
+```bash
+# 查看会话
+sqlite3 ~/.chememcp/memory.db "SELECT id, title, created_at FROM sessions;"
+
+# 查看消息
+sqlite3 ~/.chememcp/memory.db "SELECT session_id, role, content FROM messages LIMIT 10;"
+
+# 测试 FTS5 搜索
+sqlite3 ~/.chememcp/memory.db "SELECT * FROM messages_fts WHERE messages_fts MATCH 'TCU';"
+```
+
+---
+
+## 📚 相关文档
+
+- [TESTING.md](./TESTING.md) - 完整测试指南（4 种测试方法）
 - [SPECIFICATION.md](./SPECIFICATION.md) - 原始需求规格说明
 - [.claude/plans/](/.claude/plans/) - 详细技术设计方案
+
+---
 
 ## License
 
@@ -256,4 +440,4 @@ MIT
 
 ## 作者
 
-Generated by Claude Code
+Generated by VZ&CC&MM2

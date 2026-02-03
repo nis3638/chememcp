@@ -14,7 +14,10 @@
     "dev": "npm run build && npm start",
     "clean": "rm -rf build",
     "type-check": "tsc --noEmit",
-    "test:db": "npm run build && node build/test-db.js"
+    "test:db": "npm run build && node build/test-db.js",
+    "test:quick": "npm run build && ./scripts/test-quick.sh",
+    "test:manual": "npm run build && ./scripts/test-manual.sh",
+    "test:inspector": "./scripts/test-with-inspector.sh"
   },
   "keywords": [
     "mcp",
